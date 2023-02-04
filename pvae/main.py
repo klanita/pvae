@@ -16,6 +16,8 @@ import numpy as np
 from utils import Logger, Timer, save_model, save_vars, probe_infnan
 import objectives
 import models
+from our_test import our_test
+from tqdm import tqdm
 
 runId = datetime.datetime.now().isoformat().replace(':','_')
 torch.backends.cudnn.benchmark = True
@@ -24,6 +26,8 @@ parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
 
 ### General
 parser.add_argument('--save-dir', type=str, default='')
+parser.add_argument('--path', type=str, default='/Users/klanna/UniParis/pvae/experiments/')
+
 parser.add_argument('--model', type=str, metavar='M', help='model name')
 parser.add_argument('--manifold', type=str, default='PoincareBall', choices=['Euclidean', 'PoincareBall'])
 parser.add_argument('--name', type=str, default='.', help='experiment name (default: None)')
@@ -76,6 +80,9 @@ parser.add_argument('--learn-prior-std', action='store_true', default=False)
 parser.add_argument('--no-cuda', action='store_true', default=False, help='disables CUDA use')
 parser.add_argument('--seed', type=int, default=0, metavar='S', help='random seed (default: 1)')
 
+parser.add_argument('--family', type=str, default=None, help='Protein family')
+
+
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
 device = torch.device("cuda" if args.cuda else "cpu")
@@ -91,23 +98,21 @@ torch.manual_seed(args.seed)
 torch.backends.cudnn.deterministic = True
 
 # Create directory for experiment if necessary
-directory_name = 'experiments/{}'.format(args.name)
-if args.name != '.':
-    if not os.path.exists(directory_name):
-        os.makedirs(directory_name)
-    runPath = mkdtemp(prefix=runId, dir=directory_name)
-else:
-    runPath = mkdtemp(prefix=runId, dir=directory_name)
+directory_name = f'{args.path}/{args.family}/{args.name}'
+os.makedirs(directory_name, exist_ok=True)
+runPath = mkdtemp(prefix=runId, dir=directory_name)
+os.makedirs(runPath, exist_ok=True)
+
 sys.stdout = Logger('{}/run.log'.format(runPath))
 print('RunID:', runId)
 
 # Save args to run
 with open('{}/args.json'.format(runPath), 'w') as fp:
     json.dump(args.__dict__, fp)
-with open('{}/args.txt'.format(runPath), 'w') as fp:
-    git_hash = subprocess.check_output(['git', 'rev-parse', '--verify', 'HEAD'])
-    command = ' '.join(sys.argv[1:])
-    fp.write(git_hash.decode('utf-8') + command)
+# with open('{}/args.txt'.format(runPath), 'w') as fp:
+#     git_hash = subprocess.check_output(['git', 'rev-parse', '--verify', 'HEAD'])
+#     command = ' '.join(sys.argv[1:])
+#     fp.write(git_hash.decode('utf-8') + command)
 torch.save(args, '{}/args.rar'.format(runPath))
 
 # Initialise model, optimizer, dataset loader and loss function
@@ -136,9 +141,9 @@ def train(epoch, agg):
     agg['train_loss'].append(b_loss / len(train_loader.dataset))
     agg['train_recon'].append(b_recon / len(train_loader.dataset))
     agg['train_kl'].append(b_kl / len(train_loader.dataset))
-    if epoch % 1 == 0:
-        print('====> Epoch: {:03d} Loss: {:.2f} Recon: {:.2f} KL: {:.2f}'.format(epoch, agg['train_loss'][-1], agg['train_recon'][-1], agg['train_kl'][-1]))
-
+    # if epoch % 5 == 0:
+    #     print('Epoch: {:03d} Loss: {:.2f} Recon: {:.2f} KL: {:.2f}'.format(epoch, agg['train_loss'][-1], agg['train_recon'][-1], agg['train_kl'][-1]))
+    return 'Loss: {:.2f} Recon: {:.2f} KL: {:.2f}'.format(agg['train_loss'][-1], agg['train_recon'][-1], agg['train_kl'][-1])
 
 def test(epoch, agg):
     model.eval()
@@ -158,19 +163,27 @@ def test(epoch, agg):
     print('====>             Test loss: {:.4f} mlik: {:.4f}'.format(agg['test_loss'][-1], agg['test_mlik'][-1]))
 
 
+    
 if __name__ == '__main__':
     with Timer('ME-VAE') as t:
         agg = defaultdict(list)
         print('Starting training...')
 
         model.init_last_layer_bias(train_loader)
-        for epoch in range(1, args.epochs + 1):
-            train(epoch, agg)
+        pbar = tqdm(range(1, args.epochs + 1))
+        for epoch in pbar:
+            msg = train(epoch, agg)
             if args.save_freq == 0 or epoch % args.save_freq == 0:
                 if not args.skip_test: test(epoch, agg)
                 model.generate(runPath, epoch)
-            save_model(model, runPath + '/model.rar')
+            # save_model(model, runPath + '/model.rar')
+            save_model(model, runPath + '/model.ckpt')
             save_vars(agg, runPath + '/losses.rar')
+            
+            pbar.set_description(msg)
 
         print('p(z) params:')
         print(model.pz_params)
+    
+    print(runPath + '/model.ckpt')
+    our_test(runPath + '/model.ckpt', args.family, losses=agg)

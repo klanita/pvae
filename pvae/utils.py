@@ -126,6 +126,7 @@ def save_model(model, filepath):
     `model.load_state_dict(torch.load('path-to-saved-model'))`.
     """
     save_vars(model.state_dict(), filepath)
+    # save_vars(model, filepath)
 
 
 def log_mean_exp(value, dim=0, keepdim=False):

@@ -12,10 +12,10 @@ def load_csv(filename):
 
 
 class CSVDataset(torch.utils.data.Dataset):
-    def __init__(self, csv_name):
-        filename = 'data/{}.csv'.format(csv_name)
+    def __init__(self, csv_name, PATH='/Users/klanna/UniParis/pvae/'):
+        filename = f'{PATH}data/{csv_name}.csv'
         dataset = np.array(load_csv(filename))
-        dataset = dataset[1:, :]
+        # dataset = dataset[1:, :]
         self.images = dataset[:, 0:-1].astype(np.float)
         self.latents = dataset[:, [-1]]
         self.latents = self.latents.astype(np.int)
